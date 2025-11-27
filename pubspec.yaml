@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   
   # Audio playback
-  just_audio: ^0.9.36
+  just_audio: ^0.10.5
   
   # HTTP client for downloads
   dio: ^5.4.0
@@ -23,13 +23,22 @@ dependencies:
   provider: ^6.1.1
   
   # Local storage paths
-  path_provider: ^2.1.1
+  path_provider: ^2.1.5
   
   # Image caching
   cached_network_image: ^3.3.1
   
   # Icons
   cupertino_icons: ^1.0.2
+  youtube_explode_dart: ^3.0.5
+  google_fonts: ^6.3.2
+  palette_generator: ^0.3.3+7
+  permission_handler: ^12.0.1
+  audio_session: ^0.2.2
+  audio_service: ^0.18.18
+  rxdart: ^0.28.0
+  flutter_inappwebview: ^6.0.0
+  soundcloud_explode_dart: ^1.1.0
 
 dev_dependencies:
   flutter_test:

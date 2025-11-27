@@ -1,10 +1,3 @@
-/**
- * Library Page
- * 
- * Displays all downloaded songs for offline playback.
- * Allows playing and deleting downloaded songs.
- */
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/library_provider.dart';
@@ -12,7 +5,7 @@ import '../providers/player_provider.dart';
 import '../widgets/song_tile.dart';
 
 class LibraryPage extends StatefulWidget {
-  const LibraryPage({Key? key}) : super(key: key);
+  const LibraryPage({super.key});
 
   @override
   State<LibraryPage> createState() => _LibraryPageState();
@@ -22,173 +15,156 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void initState() {
     super.initState();
-    // Load library when page opens
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<LibraryProvider>().loadLibrary();
-    });
+    Future.microtask(() => 
+      Provider.of<LibraryProvider>(context, listen: false).loadLibrary()
+    );
   }
+
+  String _selectedFilter = 'Downloaded';
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        backgroundColor: Colors.green,
-        elevation: 0,
-        title: const Text(
-          'My Library',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-              context.read<LibraryProvider>().refresh();
-            },
-          ),
-        ],
-      ),
-      body: Consumer<LibraryProvider>(
-        builder: (context, libraryProvider, child) {
-          if (libraryProvider.isLoading) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-
-          if (libraryProvider.songs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
                 children: [
-                  Icon(
-                    Icons.library_music,
-                    size: 64,
-                    color: Colors.grey[400],
+                  const CircleAvatar(
+                    backgroundColor: Colors.purple,
+                    child: Icon(Icons.person, color: Colors.white),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No downloaded songs',
+                  const SizedBox(width: 16),
+                  const Text(
+                    'Your Library',
                     style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey[600],
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Download songs to play them offline',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[500],
-                    ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.add),
+                    onPressed: () {},
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.search),
+                    onPressed: () {},
                   ),
                 ],
               ),
-            );
-          }
+            ),
 
-          return Column(
-            children: [
-              // Storage info
-              FutureBuilder<String>(
-                future: libraryProvider.getTotalStorageUsed(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasData) {
-                    return Container(
-                      padding: const EdgeInsets.all(16),
-                      color: Colors.green[50],
-                      child: Row(
+            // Filter Chips
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  _buildChip('All'),
+                  const SizedBox(width: 8),
+                  _buildChip('Downloaded'),
+                  const SizedBox(width: 8),
+                  _buildChip('Playlists'),
+                  const SizedBox(width: 8),
+                  _buildChip('Artists'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Content
+            Expanded(
+              child: Consumer<LibraryProvider>(
+                builder: (context, provider, child) {
+                  if (provider.isLoading) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  // Filter logic
+                  var songs = provider.songs;
+                  if (_selectedFilter == 'Downloaded') {
+                    songs = songs.where((s) => s.isDownloaded).toList();
+                  }
+                  // Other filters are mock for now
+
+                  if (songs.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.storage, color: Colors.green),
-                          const SizedBox(width: 8),
+                          const Icon(Icons.music_note, size: 64, color: Colors.grey),
+                          const SizedBox(height: 16),
                           Text(
-                            '${libraryProvider.songs.length} songs • ${snapshot.data}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w500,
-                            ),
+                            _selectedFilter == 'Downloaded' 
+                                ? 'No downloaded songs' 
+                                : 'Your library is empty',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Download songs to listen offline',
+                            style: TextStyle(color: Colors.grey),
                           ),
                         ],
                       ),
                     );
                   }
-                  return const SizedBox.shrink();
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 80),
+                    itemCount: songs.length,
+                    itemBuilder: (context, index) {
+                      final song = songs[index];
+                      return SongTile(
+                        song: song,
+                        onTap: () {
+                          Provider.of<PlayerProvider>(context, listen: false).playSong(song);
+                        },
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.grey),
+                          onPressed: () {
+                            provider.deleteSong(song.videoId);
+                          },
+                        ),
+                      );
+                    },
+                  );
                 },
               ),
-              
-              // Songs list
-              Expanded(
-                child: ListView.builder(
-                  itemCount: libraryProvider.songs.length,
-                  itemBuilder: (context, index) {
-                    final song = libraryProvider.songs[index];
-                    
-                    return Dismissible(
-                      key: Key(song.videoId),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 16),
-                        child: const Icon(
-                          Icons.delete,
-                          color: Colors.white,
-                        ),
-                      ),
-                      confirmDismiss: (direction) async {
-                        return await showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Delete Song'),
-                            content: Text(
-                              'Are you sure you want to delete "${song.title}"?',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Cancel'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: const Text(
-                                  'Delete',
-                                  style: TextStyle(color: Colors.red),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      onDismissed: (direction) {
-                        libraryProvider.deleteSong(song);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('${song.title} deleted'),
-                          ),
-                        );
-                      },
-                      child: SongTile(
-                        song: song,
-                        showDownloadButton: false,
-                        onTap: () {
-                          // Play from local storage
-                          context.read<PlayerProvider>().playLocalSong(
-                            song,
-                            playlist: libraryProvider.songs,
-                            index: index,
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChip(String label) {
+    final isSelected = _selectedFilter == label;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedFilter = label;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.green : Colors.transparent,
+          border: Border.all(color: isSelected ? Colors.green : Colors.grey),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.black : Colors.white,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ),
     );
   }

@@ -1,40 +1,52 @@
-/**
- * Song Tile Widget
- * 
- * Reusable widget for displaying a song in a list.
- * Shows thumbnail, title, artist, duration, and download status.
- */
-
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../models/song.dart';
 
 class SongTile extends StatelessWidget {
   final Song song;
   final VoidCallback onTap;
-  final VoidCallback? onDownload;
-  final bool showDownloadButton;
-  final double? downloadProgress;
+  final Widget? trailing;
 
   const SongTile({
-    Key? key,
+    super.key,
     required this.song,
     required this.onTap,
-    this.onDownload,
-    this.showDownloadButton = true,
-    this.downloadProgress,
-  }) : super(key: key);
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: _buildThumbnail(),
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: song.thumbnail.isNotEmpty
+            ? Image.network(
+                song.thumbnail,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  width: 48,
+                  height: 48,
+                  color: Colors.grey[800],
+                  child: const Icon(Icons.music_note, color: Colors.white54),
+                ),
+              )
+            : Container(
+                width: 48,
+                height: 48,
+                color: Colors.grey[800],
+                child: const Icon(Icons.music_note, color: Colors.white54),
+              ),
+      ),
       title: Text(
         song.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(
           fontWeight: FontWeight.w500,
+          fontSize: 16,
         ),
       ),
       subtitle: Text(
@@ -42,101 +54,16 @@ class SongTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: Colors.grey[600],
-          fontSize: 13,
+          color: Colors.grey[400],
+          fontSize: 14,
         ),
       ),
-      trailing: _buildTrailing(),
-      onTap: onTap,
-    );
-  }
-
-  Widget _buildThumbnail() {
-    if (song.thumbnail.isEmpty) {
-      return Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          color: Colors.grey[300],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(Icons.music_note, color: Colors.grey),
-      );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: CachedNetworkImage(
-        imageUrl: song.thumbnail,
-        width: 56,
-        height: 56,
-        fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
-          color: Colors.grey[300],
-          child: const Center(
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-        errorWidget: (context, url, error) => Container(
-          color: Colors.grey[300],
-          child: const Icon(Icons.music_note, color: Colors.grey),
-        ),
+      trailing: trailing ?? IconButton(
+        icon: const Icon(Icons.more_vert, color: Colors.grey),
+        onPressed: () {
+          // Show options menu
+        },
       ),
     );
-  }
-
-  Widget _buildTrailing() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Duration
-        Text(
-          song.formattedDuration,
-          style: TextStyle(
-            color: Colors.grey[600],
-            fontSize: 12,
-          ),
-        ),
-        const SizedBox(width: 8),
-        
-        // Download button/status
-        if (showDownloadButton) _buildDownloadIndicator(),
-      ],
-    );
-  }
-
-  Widget _buildDownloadIndicator() {
-    // Show progress if downloading
-    if (downloadProgress != null) {
-      return SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(
-          value: downloadProgress,
-          strokeWidth: 2,
-        ),
-      );
-    }
-
-    // Show downloaded icon if downloaded
-    if (song.isDownloaded) {
-      return const Icon(
-        Icons.download_done,
-        color: Colors.green,
-        size: 20,
-      );
-    }
-
-    // Show download button
-    if (onDownload != null) {
-      return IconButton(
-        icon: const Icon(Icons.download, size: 20),
-        onPressed: onDownload,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(),
-      );
-    }
-
-    return const SizedBox.shrink();
   }
 }

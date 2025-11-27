@@ -69,5 +69,11 @@
 	<string>This app needs access to save downloaded music files</string>
 	<key>NSAppleMusicUsageDescription</key>
 	<string>This app streams music from YouTube</string>
+	
+	<!-- Enable File Sharing -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>

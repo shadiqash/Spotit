@@ -1,129 +1,154 @@
-/**
- * Mini Player Widget
- * 
- * Persistent bottom player that shows current song and basic controls.
- * Tapping it navigates to the full-screen player.
- */
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/player_provider.dart';
 import '../pages/player_page.dart';
 
 class MiniPlayer extends StatelessWidget {
-  const MiniPlayer({Key? key}) : super(key: key);
+  const MiniPlayer({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Consumer<PlayerProvider>(
-      builder: (context, playerProvider, child) {
-        final song = playerProvider.currentSong;
-        
-        // Don't show mini player if no song is playing
-        if (song == null) {
-          return const SizedBox.shrink();
-        }
+      builder: (context, player, child) {
+        final song = player.currentSong;
+        if (song == null) return const SizedBox();
 
         return GestureDetector(
           onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const PlayerPage()),
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                fullscreenDialog: true,
+                builder: (context) => const PlayerPage(),
+              ),
             );
           },
           child: Container(
-            height: 70,
+            margin: const EdgeInsets.fromLTRB(8, 0, 8, 60), // Floating above bottom nav
+            height: 56,
             decoration: BoxDecoration(
-              color: Colors.grey[900],
+              color: const Color(0xFF282828), // Spotify dark grey surface
+              borderRadius: BorderRadius.circular(6),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withOpacity(0.4),
                   blurRadius: 8,
-                  offset: const Offset(0, -2),
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
-            child: Row(
+            child: Column(
               children: [
-                // Thumbnail
-                _buildThumbnail(song.thumbnail),
-                
-                const SizedBox(width: 12),
-                
-                // Song info
                 Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        song.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                      // Thumbnail
+                      ClipRRect(
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(6),
+                          bottomLeft: Radius.circular(6),
+                        ),
+                        child: Image.network(
+                          song.thumbnail,
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Container(
+                            width: 56,
+                            height: 56,
+                            color: Colors.grey[800],
+                            child: const Icon(Icons.music_note, color: Colors.white54),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      
+                      // Title & Artist
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              song.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              song.artist,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Controls
+                      IconButton(
+                        icon: const Icon(Icons.favorite_border, color: Colors.white),
+                        onPressed: () {},
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 16),
+                      IconButton(
+                        icon: Icon(
+                          player.isPlaying ? Icons.pause : Icons.play_arrow,
                           color: Colors.white,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
                         ),
+                        onPressed: () {
+                          if (player.isPlaying) {
+                            player.pause();
+                          } else {
+                            player.resume();
+                          }
+                        },
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        song.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.grey[400],
-                          fontSize: 12,
-                        ),
-                      ),
+                      const SizedBox(width: 8),
                     ],
                   ),
                 ),
                 
-                // Play/Pause button
-                IconButton(
-                  icon: Icon(
-                    playerProvider.isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: Colors.white,
-                  ),
-                  onPressed: () => playerProvider.togglePlayPause(),
+                // Progress Bar Overlay
+                StreamBuilder<Duration>(
+                  stream: player.positionStream,
+                  builder: (context, snapshot) {
+                    final position = snapshot.data ?? Duration.zero;
+                    final duration = player.duration;
+                    double value = 0.0;
+                    if (duration.inMilliseconds > 0) {
+                      value = position.inMilliseconds / duration.inMilliseconds;
+                      value = value.clamp(0.0, 1.0);
+                    }
+                    return ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(6),
+                        bottomRight: Radius.circular(6),
+                      ),
+                      child: LinearProgressIndicator(
+                        value: value,
+                        backgroundColor: Colors.transparent,
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Colors.white, // White progress bar like Spotify mini player
+                        ),
+                        minHeight: 2,
+                      ),
+                    );
+                  },
                 ),
-                
-                const SizedBox(width: 8),
               ],
             ),
           ),
         );
       },
-    );
-  }
-
-  Widget _buildThumbnail(String thumbnailUrl) {
-    if (thumbnailUrl.isEmpty) {
-      return Container(
-        width: 70,
-        height: 70,
-        color: Colors.grey[800],
-        child: const Icon(Icons.music_note, color: Colors.grey),
-      );
-    }
-
-    return CachedNetworkImage(
-      imageUrl: thumbnailUrl,
-      width: 70,
-      height: 70,
-      fit: BoxFit.cover,
-      placeholder: (context, url) => Container(
-        color: Colors.grey[800],
-        child: const Center(
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-      errorWidget: (context, url, error) => Container(
-        color: Colors.grey[800],
-        child: const Icon(Icons.music_note, color: Colors.grey),
-      ),
     );
   }
 }

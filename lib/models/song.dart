@@ -16,6 +16,9 @@ class Song {
   bool isDownloaded;
   String? localPath;
   String? filename;
+  
+  // Source info
+  bool isSoundCloud;
 
   Song({
     required this.videoId,
@@ -27,6 +30,7 @@ class Song {
     this.isDownloaded = false,
     this.localPath,
     this.filename,
+    this.isSoundCloud = false,
   });
 
   /// Create Song from JSON (from API response)
@@ -41,6 +45,7 @@ class Song {
       isDownloaded: json['isDownloaded'] ?? false,
       localPath: json['localPath'],
       filename: json['filename'],
+      isSoundCloud: json['isSoundCloud'] ?? false,
     );
   }
 
@@ -56,6 +61,7 @@ class Song {
       'isDownloaded': isDownloaded,
       'localPath': localPath,
       'filename': filename,
+      'isSoundCloud': isSoundCloud,
     };
   }
 

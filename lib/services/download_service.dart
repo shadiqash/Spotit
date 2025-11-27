@@ -1,113 +1,182 @@
-/**
- * Download Service
- * 
- * Handles downloading MP3 files from the backend and saving them locally.
- * Provides progress tracking for downloads.
- */
-
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/song.dart';
-import 'api_service.dart';
+import 'youtube_service.dart';
+import 'cobalt_service.dart';
+import 'piped_service.dart';
+import 'myrebloom_service.dart';
+import 'soundcloud_service.dart';
 
 class DownloadService {
   final Dio _dio = Dio();
+  final YouTubeService _ytService = YouTubeService();
+  final CobaltService _cobaltService = CobaltService();
+  final PipedService _pipedService = PipedService();
+  final MyRebloomService _myrebloomService = MyRebloomService();
+  final SoundCloudService _scService = SoundCloudService();
+  
+  final Map<String, bool> _downloadedSongs = {};
+  /// Get the public download directory
+  Future<Directory> _getDownloadDirectory() async {
+    Directory? directory;
+    
+    if (Platform.isAndroid) {
+      directory = Directory('/storage/emulated/0/Download');
+    } else {
+      directory = await getApplicationDocumentsDirectory();
+    }
+    
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+    
+    return directory;
+  }
 
-  /// Download a song MP3 file
-  /// 
-  /// [song] - Song to download
-  /// [onProgress] - Callback for download progress (0.0 to 1.0)
-  /// 
-  /// Returns the local file path
-  Future<String> downloadSong(
-    Song song, {
-    Function(double)? onProgress,
-  }) async {
+  /// Sanitize filename
+  String _sanitizeFilename(String filename) {
+    return filename.replaceAll(RegExp(r'[<>:"/\\|?*]'), '');
+  }
+
+  /// Download a song directly from YouTube stream
+  Future<String?> downloadSong(Song song, {Function(double)? onProgress}) async {
     try {
-      // First, trigger backend download
-      final apiService = ApiService();
-      final downloadResult = await apiService.downloadSong(song);
-      
-      final filename = downloadResult['filename'];
-      final songUrl = ApiService.getSongUrl(filename);
-      
-      // Get local storage directory
-      final directory = await getApplicationDocumentsDirectory();
-      final localPath = '${directory.path}/$filename';
-      
-      // Check if file already exists
-      final file = File(localPath);
-      if (await file.exists()) {
-        print('File already exists locally: $localPath');
-        return localPath;
+      // Request storage permissions
+      var status = await Permission.storage.status;
+      if (!status.isGranted) {
+        status = await Permission.storage.request();
       }
       
-      // Download the file from backend to local storage
+      // Try multiple conversion services to bypass network blocks
+      String? audioUrl;
+      
+      if (song.isSoundCloud) {
+        print('Downloading from SoundCloud...');
+        audioUrl = await _scService.getStreamUrl(song.videoId);
+        if (audioUrl == null) throw Exception('Could not get SoundCloud stream URL');
+      } else {
+        // Try myrebloom.fr first (user confirmed it works!)
+        try {
+          print('Trying myrebloom.fr conversion service...');
+          audioUrl = await _myrebloomService.getAudioUrl(song.url);
+          print('myrebloom.fr success: $audioUrl');
+        } catch (myrebloomError) {
+          print('myrebloom.fr failed: $myrebloomError');
+          
+          // Fallback to Cobalt
+          try {
+            print('Trying Cobalt conversion service...');
+            audioUrl = await _cobaltService.getAudioUrl(song.url);
+            print('Cobalt success: $audioUrl');
+          } catch (cobaltError) {
+            print('Cobalt failed: $cobaltError');
+            
+            // Last resort: Direct YouTube (likely to fail with 403)
+            print('Falling back to direct YouTube...');
+            audioUrl = await _ytService.getAudioUrl(song.videoId);
+          }
+        }
+      }
+      
+      if (audioUrl == null) throw Exception('No download URL found');
+
+      // Get storage path
+      final dir = await _getDownloadDirectory();
+      
+      // Create readable filename: "Title - Artist [videoId].mp3"
+      final filename = _sanitizeFilename('${song.title} - ${song.artist} [${song.videoId}].mp3');
+      final savePath = '${dir.path}/$filename';
+
+      // Download file
       await _dio.download(
-        songUrl,
-        localPath,
+        audioUrl,
+        savePath,
+        options: Options(
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Origin': 'https://www.youtube.com',
+            'Referer': 'https://www.youtube.com/',
+          },
+        ),
         onReceiveProgress: (received, total) {
           if (total != -1 && onProgress != null) {
-            final progress = received / total;
-            onProgress(progress);
+            onProgress(received / total);
           }
         },
       );
-      
-      print('Download complete: $localPath');
-      return localPath;
+
+      return savePath;
     } catch (e) {
       print('Download error: $e');
-      throw Exception('Failed to download song: $e');
+      return null;
     }
   }
 
-  /// Check if a song is downloaded locally
-  /// 
-  /// [filename] - Name of the file
-  /// 
-  /// Returns true if file exists
-  Future<bool> isDownloaded(String filename) async {
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/$filename');
-      return await file.exists();
-    } catch (e) {
-      return false;
+  /// Check if song is already downloaded
+  Future<bool> isSongDownloaded(String videoId) async {
+    // This is tricky because we changed to readable filenames.
+    // We'd need to check if ANY file matches the song info, or store a mapping.
+    // For simplicity, we'll check if the file exists based on the title/artist we have NOW.
+    // NOTE: This might be flaky if title/artist changes. Ideally we'd store metadata.
+    // But for "public folder" requirement, this is the tradeoff.
+    
+    // Actually, to keep it robust for the app, we should probably ALSO save a map or 
+    // just rely on the user seeing the file.
+    // Let's try to reconstruct the path.
+    // BUT we don't have the song object here, only videoId.
+    // This breaks `isSongDownloaded(videoId)`.
+    
+    // FIX: We will scan the directory for a file that *contains* the videoId? 
+    // No, we don't put videoId in the filename.
+    
+    // Alternative: We can't easily check by videoId anymore unless we store a database.
+    // Let's assume for now we won't check by videoId for the UI "check" icon, 
+    // OR we append the videoId to the filename: "Title - Artist [videoId].mp3"
+    // This is common in youtube-dl.
+    
+    final dir = await _getDownloadDirectory();
+    final files = dir.listSync();
+    for (var file in files) {
+      if (file.path.contains(videoId)) {
+        return true;
+      }
     }
+    return false;
+  }
+  
+  /// Helper to find file by videoId
+  Future<File?> _findFileByVideoId(String videoId) async {
+    final dir = await _getDownloadDirectory();
+    if (!await dir.exists()) return null;
+    
+    try {
+      final files = dir.listSync();
+      for (var file in files) {
+        if (file.path.contains(videoId)) {
+          return File(file.path);
+        }
+      }
+    } catch (e) {
+      print('Error listing files: $e');
+    }
+    return null;
   }
 
   /// Get local file path for a song
-  /// 
-  /// [filename] - Name of the file
-  /// 
-  /// Returns the full local path
-  Future<String> getLocalPath(String filename) async {
-    final directory = await getApplicationDocumentsDirectory();
-    return '${directory.path}/$filename';
+  Future<String> getSongPath(String videoId) async {
+    final file = await _findFileByVideoId(videoId);
+    return file?.path ?? '';
   }
-
-  /// Delete a downloaded song from local storage
-  /// 
-  /// [filename] - Name of the file to delete
-  /// 
-  /// Returns true if successful
-  Future<bool> deleteLocalFile(String filename) async {
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/$filename');
-      
-      if (await file.exists()) {
-        await file.delete();
-        print('Deleted local file: $filename');
-        return true;
-      }
-      
-      return false;
-    } catch (e) {
-      print('Error deleting file: $e');
-      return false;
+  
+  /// Delete a downloaded song
+  Future<void> deleteSong(String videoId) async {
+    final file = await _findFileByVideoId(videoId);
+    if (file != null && await file.exists()) {
+      await file.delete();
     }
   }
 }

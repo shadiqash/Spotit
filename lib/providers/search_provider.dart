@@ -1,67 +1,52 @@
-/**
- * Search Provider
- * 
- * Manages the state of song search functionality.
- * Handles search queries, results, and loading states.
- */
-
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'package:flutter/material.dart';
 import '../models/song.dart';
-import '../services/api_service.dart';
+import '../services/soundcloud_service.dart';
 
 class SearchProvider with ChangeNotifier {
-  final ApiService _apiService = ApiService();
-
-  List<Song> _results = [];
-  String _query = '';
+  final SoundCloudService _scService = SoundCloudService();
+  
+  List<Song> _searchResults = [];
   bool _isLoading = false;
-  String? _error;
+  String _error = '';
 
-  List<Song> get results => _results;
-  String get query => _query;
+  List<Song> get searchResults => _searchResults;
   bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get hasResults => _results.isNotEmpty;
+  String get error => _error;
 
-  /// Search for songs
-  Future<void> search(String query) async {
-    if (query.trim().isEmpty) {
-      _results = [];
-      _query = '';
-      _error = null;
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  Future<void> searchSongs(String query) async {
+    if (query.isEmpty) return;
+
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      _isLoading = true;
+      _error = '';
       notifyListeners();
-      return;
-    }
 
-    _query = query;
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      _results = await _apiService.search(query, limit: 20);
-      _error = null;
-    } catch (e) {
-      print('Search error: $e');
-      _error = 'Search failed. Please try again.';
-      _results = [];
-    }
-
-    _isLoading = false;
-    notifyListeners();
+      try {
+        _searchResults = await _scService.searchSongs(query);
+      } catch (e) {
+        _error = e.toString();
+        _searchResults = [];
+      } finally {
+        _isLoading = false;
+        notifyListeners();
+      }
+    });
   }
 
-  /// Clear search results
-  void clearResults() {
-    _results = [];
-    _query = '';
-    _error = null;
-    notifyListeners();
-  }
-
-  /// Clear error
-  void clearError() {
-    _error = null;
+  void clearSearch() {
+    _searchResults = [];
+    _error = '';
     notifyListeners();
   }
 }
