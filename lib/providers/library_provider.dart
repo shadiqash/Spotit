@@ -3,11 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import '../services/download_service.dart';
-import '../services/youtube_service.dart';
 
 class LibraryProvider with ChangeNotifier {
   final DownloadService _downloadService = DownloadService();
-  final YouTubeService _ytService = YouTubeService();
   
   List<Song> _songs = [];
   bool _isLoading = false;
@@ -40,24 +38,17 @@ class LibraryProvider with ChangeNotifier {
         if (file.path.endsWith('.mp3')) {
           final videoId = file.path.split('/').last.replaceAll('.mp3', '');
           
-          try {
-            // Fetch metadata from YouTube (or cache it locally in a real app)
-            // For now, we'll fetch fresh metadata to keep it simple
-            final song = await _ytService.getVideoDetails(videoId);
-            _songs.add(song.copyWith(isDownloaded: true));
-          } catch (e) {
-            // If offline, we might need a local database for metadata
-            // Fallback for now
-            _songs.add(Song(
-              videoId: videoId,
-              title: 'Downloaded Song',
-              artist: 'Unknown',
-              thumbnail: '',
-              duration: 0,
-              url: '',
-              isDownloaded: true,
-            ));
-          }
+          // Use fallback metadata (we should store metadata locally in the future)
+          _songs.add(Song(
+            videoId: videoId,
+            title: 'Downloaded Song',
+            artist: 'Unknown',
+            thumbnail: '',
+            duration: 0,
+            url: '',
+            isDownloaded: true,
+            isSoundCloud: true, // Assume all new downloads are from SoundCloud
+          ));
         }
       }
     } catch (e) {

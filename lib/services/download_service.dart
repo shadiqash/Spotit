@@ -3,18 +3,10 @@ import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/song.dart';
-import 'youtube_service.dart';
-import 'cobalt_service.dart';
-import 'piped_service.dart';
-import 'myrebloom_service.dart';
 import 'soundcloud_service.dart';
 
 class DownloadService {
   final Dio _dio = Dio();
-  final YouTubeService _ytService = YouTubeService();
-  final CobaltService _cobaltService = CobaltService();
-  final PipedService _pipedService = PipedService();
-  final MyRebloomService _myrebloomService = MyRebloomService();
   final SoundCloudService _scService = SoundCloudService();
   
   final Map<String, bool> _downloadedSongs = {};
@@ -57,27 +49,8 @@ class DownloadService {
         audioUrl = await _scService.getStreamUrl(song.videoId);
         if (audioUrl == null) throw Exception('Could not get SoundCloud stream URL');
       } else {
-        // Try myrebloom.fr first (user confirmed it works!)
-        try {
-          print('Trying myrebloom.fr conversion service...');
-          audioUrl = await _myrebloomService.getAudioUrl(song.url);
-          print('myrebloom.fr success: $audioUrl');
-        } catch (myrebloomError) {
-          print('myrebloom.fr failed: $myrebloomError');
-          
-          // Fallback to Cobalt
-          try {
-            print('Trying Cobalt conversion service...');
-            audioUrl = await _cobaltService.getAudioUrl(song.url);
-            print('Cobalt success: $audioUrl');
-          } catch (cobaltError) {
-            print('Cobalt failed: $cobaltError');
-            
-            // Last resort: Direct YouTube (likely to fail with 403)
-            print('Falling back to direct YouTube...');
-            audioUrl = await _ytService.getAudioUrl(song.videoId);
-          }
-        }
+        // Legacy YouTube tracks - not supported
+        throw Exception('YouTube downloads not supported. Please search for this song again.');
       }
       
       if (audioUrl == null) throw Exception('No download URL found');

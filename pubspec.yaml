@@ -30,14 +30,12 @@ dependencies:
   
   # Icons
   cupertino_icons: ^1.0.2
-  youtube_explode_dart: ^3.0.5
   google_fonts: ^6.3.2
   palette_generator: ^0.3.3+7
   permission_handler: ^12.0.1
   audio_session: ^0.2.2
   audio_service: ^0.18.18
   rxdart: ^0.28.0
-  flutter_inappwebview: ^6.0.0
   soundcloud_explode_dart: ^1.1.0
 
 dev_dependencies:
