@@ -43,6 +43,9 @@ dependencies:
 
   # Audio playback
   just_audio: ^0.9.36
+  
+  # Background audio and notifications
+  audio_service: ^0.18.12
 
   # Permissions
   permission_handler: ^11.1.0
