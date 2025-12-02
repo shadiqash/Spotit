@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:just_audio/just_audio.dart';
 import 'theme/app_theme.dart';
 import 'pages/home_page.dart';
 import 'pages/search_page.dart';
 import 'pages/library_page.dart';
 import 'pages/full_player_page.dart';
+import 'services/playback_service.dart';
+import 'services/queue_service.dart';
+import 'widgets/stream_extractor.dart';
+import 'models/song.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize PlaybackService
+  PlaybackService().init();
+  
   runApp(const SpotitApp());
 }
 
@@ -36,67 +42,89 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   final _yt = YoutubeExplode();
-  final _audioPlayer = AudioPlayer();
-  int _currentIndex = 0;
-  InAppWebViewController? _webController;
+  final _playbackService = PlaybackService();
+  final _queueService = QueueService();
   
-  String? _currentSong;
-  String? _currentArtist;
-  String? _currentThumbnail;
+  int _currentIndex = 0;
+  
+  // UI state from streams
+  Song? _currentSong;
   bool _isPlaying = false;
   bool _isLoading = false;
+  bool _shuffleEnabled = false;
+  int _repeatMode = 0;
 
   @override
   void initState() {
     super.initState();
     
-    _audioPlayer.playerStateStream.listen((state) {
-      setState(() => _isPlaying = state.playing);
+    // Listen to current song changes
+    _queueService.currentSongStream.listen((song) {
+      if (mounted) {
+        setState(() => _currentSong = song);
+      }
     });
-  }
-
-  Future<void> _play(Video video) async {
-    setState(() {
-      _isLoading = true;
-      _currentSong = video.title;
-      _currentArtist = video.author;
-      _currentThumbnail = video.thumbnails.mediumResUrl;
-    });
-
-    try {
-      final videoId = video.id.value;
-      final url = 'https://music.youtube.com/watch?v=$videoId';
-      
-      print('Loading YouTube Music: $url');
-      await _webController?.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
-    } catch (e) {
-      print('Play error: $e');
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _handleStreamUrl(String streamUrl) async {
-    print('Playing stream: $streamUrl');
     
-    try {
-      await _audioPlayer.setUrl(streamUrl);
-      await _audioPlayer.play();
-      
-      setState(() {
-        _isLoading = false;
-        _isPlaying = true;
-      });
-    } catch (e) {
-      print('Audio player error: $e');
-      setState(() => _isLoading = false);
-    }
+    // Listen to playback state
+    _playbackService.audioPlayer.playerStateStream.listen((state) {
+      if (mounted) {
+        setState(() => _isPlaying = state.playing);
+      }
+    });
+    
+    // Listen to loading state
+    _playbackService.isLoadingStream.listen((loading) {
+      if (mounted) {
+        setState(() => _isLoading = loading);
+      }
+    });
+    
+    // Listen to shuffle state
+    _queueService.shuffleStream.listen((shuffled) {
+      if (mounted) {
+        setState(() => _shuffleEnabled = shuffled);
+      }
+    });
+    
+    // Listen to repeat mode
+    _queueService.repeatStream.listen((mode) {
+      if (mounted) {
+        setState(() => _repeatMode = mode);
+      }
+    });
+  }
+
+  void _onPlay(Video video, List<Video> allResults) {
+    // Convert Video to Song
+    final songs = allResults.map((v) => Song(
+      id: v.id.value,
+      title: v.title,
+      artist: v.author,
+      thumbnailUrl: v.thumbnails.highResUrl,
+      duration: v.duration?.inSeconds.toString() ?? '0',
+    )).toList();
+    
+    final selectedSong = Song(
+      id: video.id.value,
+      title: video.title,
+      artist: video.author,
+      thumbnailUrl: video.thumbnails.highResUrl,
+      duration: video.duration?.inSeconds.toString() ?? '0',
+    );
+    
+    // Set the queue
+    final index = songs.indexWhere((s) => s.id == selectedSong.id);
+    _queueService.setQueue(songs, startIndex: index >= 0 ? index : 0);
+    
+    // Play the song
+    _playbackService.play(selectedSong);
   }
 
   Future<void> _togglePlayPause() async {
     if (_isPlaying) {
-      await _audioPlayer.pause();
+      await _playbackService.pause();
     } else {
-      await _audioPlayer.play();
+      await _playbackService.resume();
     }
   }
 
@@ -104,7 +132,10 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final pages = [
       const HomePage(),
-      SearchPage(onPlay: _play, yt: _yt),
+      SearchPage(
+        onPlay: _onPlay,
+        yt: _yt,
+      ),
       const LibraryPage(),
     ];
 
@@ -117,40 +148,8 @@ class _MainScreenState extends State<MainScreen> {
             children: pages,
           ),
           
-          // Hidden InAppWebView for stream interception
-          Positioned(
-            left: -1000,
-            top: -1000,
-            width: 100,
-            height: 100,
-            child: InAppWebView(
-              initialSettings: InAppWebViewSettings(
-                javaScriptEnabled: true,
-                mediaPlaybackRequiresUserGesture: false,
-                allowsInlineMediaPlayback: true,
-              ),
-              onWebViewCreated: (controller) {
-                _webController = controller;
-                print('WebView created');
-              },
-              onLoadStop: (controller, url) {
-                print('Page loaded: $url');
-              },
-              shouldInterceptRequest: (controller, request) async {
-                final url = request.url.toString();
-                
-                if (url.contains('googlevideo.com') && 
-                    url.contains('videoplayback') &&
-                    (url.contains('mime=audio') || url.contains('itag'))) {
-                  print('🎵 Intercepted audio stream!');
-                  _handleStreamUrl(url);
-                  return null;
-                }
-                
-                return null;
-              },
-            ),
-          ),
+          // RULE #7: StreamExtractor mounted forever, invisible
+          const StreamExtractor(),
         ],
       ),
       bottomNavigationBar: Column(
@@ -163,10 +162,8 @@ class _MainScreenState extends State<MainScreen> {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => FullPlayerPage(
-                      songTitle: _currentSong!,
-                      artist: _currentArtist ?? 'Unknown',
-                      thumbnailUrl: _currentThumbnail,
-                      audioPlayer: _audioPlayer,
+                      queueService: _queueService,
+                      playbackService: _playbackService,
                       onClose: () => Navigator.of(context).pop(),
                     ),
                   ),
@@ -203,7 +200,7 @@ class _MainScreenState extends State<MainScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          _currentSong!,
+                          _currentSong!.title,
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w600,
@@ -212,16 +209,15 @@ class _MainScreenState extends State<MainScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (_currentArtist != null)
-                          Text(
-                            _currentArtist!,
-                            style: TextStyle(
-                              color: Colors.grey[400],
-                              fontSize: 12,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        Text(
+                          _currentSong!.artist,
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 12,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         if (_isLoading)
                           Text(
                             'Loading stream...',
@@ -307,7 +303,6 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _yt.close();
-    _audioPlayer.dispose();
     super.dispose();
   }
 }

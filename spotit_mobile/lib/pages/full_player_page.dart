@@ -1,21 +1,21 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import '../theme/app_theme.dart';
+import '../services/queue_service.dart';
+import '../services/playback_service.dart';
+import '../models/song.dart';
 import 'dart:math' as math;
 
 class FullPlayerPage extends StatefulWidget {
-  final String songTitle;
-  final String artist;
-  final String? thumbnailUrl;
-  final AudioPlayer audioPlayer;
+  final QueueService queueService;
+  final PlaybackService playbackService;
   final VoidCallback onClose;
 
   const FullPlayerPage({
     Key? key,
-    required this.songTitle,
-    required this.artist,
-    this.thumbnailUrl,
-    required this.audioPlayer,
+    required this.queueService,
+    required this.playbackService,
     required this.onClose,
   }) : super(key: key);
 
@@ -26,44 +26,182 @@ class FullPlayerPage extends StatefulWidget {
 class _FullPlayerPageState extends State<FullPlayerPage> with TickerProviderStateMixin {
   late AnimationController _rotationController;
   late AnimationController _pulseController;
+  
+  // Dynamic state from streams
+  Song? _currentSong;
   bool _isPlaying = false;
+  bool _shuffleEnabled = false;
+  int _repeatMode = 0;
+  Duration _currentPosition = Duration.zero;
+  
+  // Stream subscriptions for cleanup
+  StreamSubscription? _songSubscription;
+  StreamSubscription? _playerSubscription;
+  StreamSubscription? _shuffleSubscription;
+  StreamSubscription? _repeatSubscription;
+  StreamSubscription? _positionSubscription;
 
   @override
   void initState() {
     super.initState();
     
-    // Rotation animation for disc
+    // Initialize rotation animation for disc
     _rotationController = AnimationController(
       duration: const Duration(seconds: 20),
       vsync: this,
     )..repeat();
     
-    // Pulse animation for controls
+    // Initialize pulse animation for controls
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
     )..repeat(reverse: true);
     
-    // Listen to player state
-    widget.audioPlayer.playerStateStream.listen((state) {
-      setState(() => _isPlaying = state.playing);
-      if (state.playing) {
-        _rotationController.repeat();
-      } else {
-        _rotationController.stop();
-      }
+    // Set initial state from services
+    _currentSong = widget.queueService.currentSong;
+    _shuffleEnabled = widget.queueService.shuffleEnabled;
+    _repeatMode = widget.queueService.repeatMode;
+    
+    _setupStreamListeners();
+  }
+
+  /// Set up all stream listeners with error handling
+  void _setupStreamListeners() {
+    // Listen to current song changes - updates metadata when next/prev pressed
+    _songSubscription = widget.queueService.currentSongStream.listen(
+      _updateCurrentSong,
+      onError: (error) => print('Error in song stream: $error'),
+    );
+    
+    // Listen to player state - updates play/pause button and disc animation
+    _playerSubscription = widget.playbackService.audioPlayer.playerStateStream.listen(
+      _updatePlayerState,
+      onError: (error) => print('Error in player state stream: $error'),
+    );
+    
+    // Listen to shuffle state - updates shuffle button color
+    _shuffleSubscription = widget.queueService.shuffleStream.listen(
+      _updateShuffleState,
+      onError: (error) => print('Error in shuffle stream: $error'),
+    );
+    
+    // Listen to repeat mode - updates repeat button icon
+    _repeatSubscription = widget.queueService.repeatStream.listen(
+      _updateRepeatMode,
+      onError: (error) => print('Error in repeat stream: $error'),
+    );
+
+    // Listen to position stream - updates progress bar
+    _positionSubscription = widget.playbackService.audioPlayer.positionStream.listen(
+      (position) {
+        if (mounted) setState(() => _currentPosition = position);
+      },
+      onError: (error) => print('Error in position stream: $error'),
+    );
+    
+    // Set initial playing state
+    _updatePlayerState(widget.playbackService.audioPlayer.playerState);
+  }
+
+  /// Update current song and reset disc animation for smooth transition
+  void _updateCurrentSong(Song? song) {
+    if (!mounted) return;
+    
+    setState(() {
+      _currentSong = song;
+      _currentPosition = Duration.zero; // Reset position on song change
     });
+    
+    // Reset disc rotation animation on track skip for smoother visual transition
+    if (song != null) {
+      _rotationController.reset();
+      if (_isPlaying) {
+        _rotationController.repeat();
+      }
+    }
+  }
+
+  /// Update player state and control disc animation
+  void _updatePlayerState(PlayerState state) {
+    if (!mounted) return;
+    
+    setState(() => _isPlaying = state.playing);
+    
+    if (state.playing) {
+      _rotationController.repeat();
+    } else {
+      _rotationController.stop();
+    }
+  }
+
+  /// Update shuffle state
+  void _updateShuffleState(bool enabled) {
+    if (!mounted) return;
+    setState(() => _shuffleEnabled = enabled);
+  }
+
+  /// Update repeat mode
+  void _updateRepeatMode(int mode) {
+    if (!mounted) return;
+    setState(() => _repeatMode = mode);
   }
 
   @override
   void dispose() {
+    // Cancel all stream subscriptions to prevent memory leaks
+    _songSubscription?.cancel();
+    _playerSubscription?.cancel();
+    _shuffleSubscription?.cancel();
+    _repeatSubscription?.cancel();
+    _positionSubscription?.cancel();
+    
+    // Dispose animation controllers
     _rotationController.dispose();
     _pulseController.dispose();
+    
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // Don't render if no song is loaded
+    if (_currentSong == null) {
+      return Scaffold(
+        backgroundColor: AppTheme.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down, size: 32),
+                      color: Colors.white,
+                      onPressed: widget.onClose,
+                    ),
+                  ],
+                ),
+              ),
+              const Expanded(
+                child: Center(
+                  child: Text(
+                    'No song loaded',
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final duration = widget.playbackService.audioPlayer.duration ?? Duration.zero;
+    final progress = duration.inMilliseconds > 0
+        ? _currentPosition.inMilliseconds / duration.inMilliseconds
+        : 0.0;
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: Container(
@@ -147,14 +285,14 @@ class _FullPlayerPageState extends State<FullPlayerPage> with TickerProviderStat
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: AppTheme.surfaceVariant,
-                        image: widget.thumbnailUrl != null
+                        image: _currentSong!.thumbnailUrl.isNotEmpty
                             ? DecorationImage(
-                                image: NetworkImage(widget.thumbnailUrl!),
+                                image: NetworkImage(_currentSong!.thumbnailUrl),
                                 fit: BoxFit.cover,
                               )
                             : null,
                       ),
-                      child: widget.thumbnailUrl == null
+                      child: _currentSong!.thumbnailUrl.isEmpty
                           ? const Icon(Icons.music_note, size: 80, color: Colors.white54)
                           : null,
                     ),
@@ -164,13 +302,13 @@ class _FullPlayerPageState extends State<FullPlayerPage> with TickerProviderStat
               
               const Spacer(),
               
-              // Song info
+              // Song info - updates dynamically from stream
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Column(
                   children: [
                     Text(
-                      widget.songTitle,
+                      _currentSong!.title,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -182,7 +320,7 @@ class _FullPlayerPageState extends State<FullPlayerPage> with TickerProviderStat
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      widget.artist,
+                      _currentSong!.artist,
                       style: TextStyle(
                         color: Colors.grey[400],
                         fontSize: 16,
@@ -195,59 +333,49 @@ class _FullPlayerPageState extends State<FullPlayerPage> with TickerProviderStat
               
               const SizedBox(height: 32),
               
-              // Progress bar
+              // Progress bar - real-time updates via positionStream
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: StreamBuilder<Duration>(
-                  stream: widget.audioPlayer.positionStream,
-                  builder: (context, snapshot) {
-                    final position = snapshot.data ?? Duration.zero;
-                    final duration = widget.audioPlayer.duration ?? Duration.zero;
-                    final progress = duration.inMilliseconds > 0
-                        ? position.inMilliseconds / duration.inMilliseconds
-                        : 0.0;
-                    
-                    return Column(
-                      children: [
-                        SliderTheme(
-                          data: SliderThemeData(
-                            trackHeight: 4,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                            activeTrackColor: AppTheme.primaryPurple,
-                            inactiveTrackColor: AppTheme.surfaceVariant,
-                            thumbColor: Colors.white,
+                child: Column(
+                  children: [
+                    SliderTheme(
+                      data: SliderThemeData(
+                        trackHeight: 4,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                        activeTrackColor: AppTheme.primaryPurple,
+                        inactiveTrackColor: AppTheme.surfaceVariant,
+                        thumbColor: Colors.white,
+                      ),
+                      child: Slider(
+                        value: progress.clamp(0.0, 1.0),
+                        onChanged: (value) {
+                          // Allow seeking by dragging
+                          if (duration.inMilliseconds > 0) {
+                            widget.playbackService.seek(
+                              Duration(milliseconds: (value * duration.inMilliseconds).toInt()),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _formatDuration(_currentPosition),
+                            style: TextStyle(color: Colors.grey[500], fontSize: 12),
                           ),
-                          child: Slider(
-                            value: progress.clamp(0.0, 1.0),
-                            onChanged: (value) {
-                              if (duration.inMilliseconds > 0) {
-                                widget.audioPlayer.seek(
-                                  Duration(milliseconds: (value * duration.inMilliseconds).toInt()),
-                                );
-                              }
-                            },
+                          Text(
+                            _formatDuration(duration),
+                            style: TextStyle(color: Colors.grey[500], fontSize: 12),
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _formatDuration(position),
-                                style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                              ),
-                              Text(
-                                _formatDuration(duration),
-                                style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
               
@@ -257,16 +385,19 @@ class _FullPlayerPageState extends State<FullPlayerPage> with TickerProviderStat
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  // Shuffle button - purple when active
                   IconButton(
                     icon: const Icon(Icons.shuffle, size: 28),
-                    color: Colors.grey[400],
-                    onPressed: () {},
+                    color: _shuffleEnabled ? AppTheme.primaryPurple : Colors.grey[400],
+                    onPressed: widget.queueService.toggleShuffle,
                   ),
+                  // Previous button
                   IconButton(
                     icon: const Icon(Icons.skip_previous, size: 36),
                     color: Colors.white,
-                    onPressed: () {},
+                    onPressed: widget.playbackService.playPrevious,
                   ),
+                  // Play/Pause button with pulse animation
                   AnimatedBuilder(
                     animation: _pulseController,
                     builder: (context, child) {
@@ -299,23 +430,28 @@ class _FullPlayerPageState extends State<FullPlayerPage> with TickerProviderStat
                         color: Colors.white,
                         onPressed: () {
                           if (_isPlaying) {
-                            widget.audioPlayer.pause();
+                            widget.playbackService.pause();
                           } else {
-                            widget.audioPlayer.play();
+                            widget.playbackService.resume();
                           }
                         },
                       ),
                     ),
                   ),
+                  // Next button
                   IconButton(
                     icon: const Icon(Icons.skip_next, size: 36),
                     color: Colors.white,
-                    onPressed: () {},
+                    onPressed: widget.playbackService.playNext,
                   ),
+                  // Repeat button - shows different icons per mode
                   IconButton(
-                    icon: const Icon(Icons.repeat, size: 28),
-                    color: Colors.grey[400],
-                    onPressed: () {},
+                    icon: Icon(
+                      _repeatMode == 2 ? Icons.repeat_one : Icons.repeat,
+                      size: 28,
+                    ),
+                    color: _repeatMode > 0 ? AppTheme.primaryPurple : Colors.grey[400],
+                    onPressed: widget.queueService.cycleRepeat,
                   ),
                 ],
               ),

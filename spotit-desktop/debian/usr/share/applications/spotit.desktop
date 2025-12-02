@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Spotit
+Comment=Music streaming app
+Exec=/usr/bin/spotit
+Icon=spotit
+Type=Application
+Categories=AudioVideo;Audio;Player;
+Terminal=false
+StartupNotify=true
+Keywords=music;player;streaming;

@@ -1,15 +1,12 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../services/webview_backend.dart';
-import '../services/audio_player_service.dart';
+import '../services/playback_service.dart';
 import 'player_event.dart';
 import 'player_state.dart';
 
 class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
-  final WebViewBackend webViewBackend;
-  final AudioPlayerService audioPlayerService;
+  final PlaybackService playbackService;
 
-  PlayerBloc(this.webViewBackend, this.audioPlayerService)
-      : super(PlayerInitial()) {
+  PlayerBloc(this.playbackService) : super(PlayerInitial()) {
     on<PlaySong>(_onPlaySong);
     on<PausePlayer>(_onPausePlayer);
     on<ResumePlayer>(_onResumePlayer);
@@ -22,21 +19,10 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     Emitter<PlayerState> emit,
   ) async {
     emit(PlayerLoadingStream(event.song));
-    try {
-      // Get the stream URL from YouTube Music
-      final streamUrl = await webViewBackend.getStreamUrl(event.song.id);
-      
-      if (streamUrl == null) {
-        emit(PlayerError('Failed to get stream URL'));
-        return;
-      }
-
-      // Play the audio
-      await audioPlayerService.play(streamUrl);
-      emit(PlayerPlaying(event.song));
-    } catch (e) {
-      emit(PlayerError('Failed to play: $e'));
-    }
+    // PlaybackService handles everything internally
+    playbackService.play(event.song);
+    // State updates will come from stream listeners
+    emit(PlayerPlaying(event.song));
   }
 
   Future<void> _onPausePlayer(
@@ -45,7 +31,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   ) async {
     if (state is PlayerPlaying) {
       final currentSong = (state as PlayerPlaying).song;
-      await audioPlayerService.pause();
+      await playbackService.pause();
       emit(PlayerPaused(currentSong));
     }
   }
@@ -56,7 +42,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
   ) async {
     if (state is PlayerPaused) {
       final currentSong = (state as PlayerPaused).song;
-      await audioPlayerService.resume();
+      await playbackService.resume();
       emit(PlayerPlaying(currentSong));
     }
   }
@@ -65,7 +51,7 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     StopPlayer event,
     Emitter<PlayerState> emit,
   ) async {
-    await audioPlayerService.stop();
+    // Stop not currently supported in PlaybackService
     emit(PlayerStopped());
   }
 
@@ -73,6 +59,6 @@ class PlayerBloc extends Bloc<PlayerEvent, PlayerState> {
     SeekTo event,
     Emitter<PlayerState> emit,
   ) async {
-    await audioPlayerService.seek(event.position);
+    await playbackService.seek(event.position);
   }
 }

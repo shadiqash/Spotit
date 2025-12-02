@@ -3,7 +3,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../theme/app_theme.dart';
 
 class SearchPage extends StatefulWidget {
-  final Function(Video) onPlay;
+  final Function(Video, List<Video>) onPlay;
   final YoutubeExplode yt;
   
   const SearchPage({
@@ -180,7 +180,7 @@ class _SearchPageState extends State<SearchPage> {
                                     ),
                                     child: IconButton(
                                       icon: const Icon(Icons.play_arrow, color: Colors.white),
-                                      onPressed: () => widget.onPlay(video),
+                                      onPressed: () => widget.onPlay(video, _results),
                                     ),
                                   ),
                                 ),

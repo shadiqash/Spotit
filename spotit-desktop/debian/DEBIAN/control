@@ -1,0 +1,9 @@
+Package: spotit
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Shadiq <shadiq@example.com>
+Description: Spotit Music Player
+ A YouTube-based music streaming app similar to Spotify.
+ Listen to music without ads on your Linux desktop.
